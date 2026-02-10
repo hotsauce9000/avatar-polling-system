@@ -244,15 +244,15 @@ Deliverable:
 
 ### Phase 1: Project Skeleton + Environments
 
-- [ ] Decide repo structure (recommended for MVP: monorepo).
-- [ ] Define top-level folders (proposed).
-- [ ] `apps/web/` (Next.js).
-- [ ] `apps/api/` (FastAPI).
-- [ ] `apps/worker/` (ARQ worker code; may share `apps/api` modules).
-- [ ] `prompts/` (versioned prompt files).
-- [ ] `supabase/` (schema, migrations, RLS policies, SQL functions).
-- [ ] `golden_tests/` (golden test inputs and expected outcomes).
-- [ ] `docs/` (this plan and future docs).
+- [x] Decide repo structure (recommended for MVP: monorepo).
+- [x] Define top-level folders (proposed).
+- [x] `apps/web/` (Next.js).
+- [x] `apps/api/` (FastAPI).
+- [x] `apps/worker/` (ARQ worker code; may share `apps/api` modules).
+- [x] `prompts/` (versioned prompt files).
+- [x] `supabase/` (schema, migrations, RLS policies, SQL functions).
+- [x] `golden_tests/` (golden test inputs and expected outcomes).
+- [x] `docs/` (this plan and future docs).
 - [ ] Create Supabase project, enable Auth magic link.
 - [ ] Configure Custom SMTP in Supabase (blocker: built-in SMTP is capped).
 - [ ] Create Railway services (api, worker, redis) and Vercel project (web).
@@ -267,9 +267,9 @@ Deliverables:
 
 ### Phase 2: Supabase Schema + RLS Foundation
 
-- [ ] Create `user_profiles` and signup trigger (Section 6).
-- [ ] Create core tables: `jobs`, `job_stages`, `experiments`, `prompt_versions`, `vision_cache`, `credit_operations`.
-- [ ] Add RLS policies for all user-scoped tables with `(select auth.uid())` and indexes.
+- [x] Create `user_profiles` and signup trigger (Section 6).
+- [x] Create core tables: `jobs`, `job_stages`, `experiments`, `prompt_versions`, `vision_cache`, `credit_operations`.
+- [x] Add RLS policies for all user-scoped tables with `(select auth.uid())` and indexes.
 - [ ] Configure Storage buckets as private + RLS on `storage.objects` (per spec).
 - [ ] Add basic views or helper functions if needed for RLS-friendly stage reads (ex: `job_stages` joined to `jobs.user_id`).
 
@@ -324,8 +324,8 @@ Deliverables:
 ### Phase 6: Progressive Delivery UI + Polling Fallback
 
 - [ ] Implement UI pages from `tasks/todo.md` as the first-pass structure.
-- [ ] Landing + auth.
-- [ ] Dashboard.
+- [x] Landing + auth.
+- [x] Dashboard.
 - [ ] Results loading (stage progress).
 - [ ] Results complete (scores, avatars, evidence, fixes).
 - [ ] Experiments list/compare.
