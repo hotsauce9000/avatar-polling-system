@@ -4,9 +4,9 @@ Source of truth: `docs/plans/2026-02-10-feat-amazon-avatar-listing-optimizer-mvp
 
 ## Phase 0: Decisions (Unblockers)
 
-- [ ] Confirm repo structure: monorepo with `apps/web`, `apps/api`, `apps/worker`
-- [ ] Confirm package manager for web: npm
-- [ ] Confirm Python packaging for api/worker: `requirements.txt` + `venv`
+- [x] Confirm repo structure: monorepo with `apps/web`, `apps/api`, `apps/worker`
+- [x] Confirm package manager for web: npm
+- [x] Confirm Python packaging for api/worker: `requirements.txt` + `venv`
 - [ ] Confirm initial credit packs (or defer and stub config)
 
 ## Phase 1: Repo Skeleton + Tooling
@@ -73,11 +73,11 @@ Source of truth: `docs/plans/2026-02-10-feat-amazon-avatar-listing-optimizer-mvp
 Page 1: Landing + Auth
 - [ ] Hero section (product name, tagline, value prop, CTA)
 - [ ] How It Works (3-step visual)
-- [ ] Magic link auth UI (email input, simple form)
+- [x] Magic link auth UI (email input, simple form)
 
 Page 2: Dashboard
-- [ ] Top nav (logo, credits, user menu)
-- [ ] ASIN input card (2 URL/ASIN fields, compare button, validation)
+- [x] Top nav (logo, credits, user menu)
+- [x] ASIN input card (2 URL/ASIN fields, compare button, validation)
 - [ ] Credit balance + usage info
 - [ ] Recent experiments list
 
