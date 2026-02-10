@@ -11,53 +11,53 @@ Source of truth: `docs/plans/2026-02-10-feat-amazon-avatar-listing-optimizer-mvp
 
 ## Phase 1: Repo Skeleton + Tooling
 
-- [ ] Create folder structure (`apps/`, `prompts/`, `supabase/`, `golden_tests/`)
-- [ ] Add `.gitignore` (node, python, env, supabase)
-- [ ] Initialize git repo and create initial commit
+- [x] Create folder structure (`apps/`, `prompts/`, `supabase/`, `golden_tests/`)
+- [x] Add `.gitignore` (node, python, env, supabase)
+- [x] Initialize git repo and create initial commit
 
 ## Phase 2: Web App (Next.js)
 
-- [ ] Scaffold Next.js app in `apps/web` (TypeScript, App Router)
-- [ ] Add basic routes and layout shells
-- [ ] Add Supabase client wiring (no secrets committed; `.env.example` only)
+- [x] Scaffold Next.js app in `apps/web` (TypeScript, App Router)
+- [x] Add basic routes and layout shells
+- [x] Add Supabase client wiring (no secrets committed; `.env.example` only)
 
 ## Phase 3: API App (FastAPI)
 
-- [ ] Scaffold FastAPI app in `apps/api`
-- [ ] Add health endpoint and config loading
-- [ ] Add JWT validation stub (Supabase JWT secret in env)
-- [ ] Add endpoint: `POST /jobs`
-- [ ] Add endpoint: `GET /jobs/{id}`
-- [ ] Add endpoint: `GET /jobs/{id}/stages`
-- [ ] Add endpoint: `GET /credits/balance`
+- [x] Scaffold FastAPI app in `apps/api`
+- [x] Add health endpoint and config loading
+- [x] Add JWT validation stub (Supabase JWT secret in env)
+- [x] Add endpoint: `POST /jobs`
+- [x] Add endpoint: `GET /jobs/{id}`
+- [x] Add endpoint: `GET /jobs/{id}/stages`
+- [x] Add endpoint: `GET /credits/balance`
 
 ## Phase 4: Worker (ARQ)
 
-- [ ] Scaffold ARQ worker in `apps/worker`
-- [ ] Add job recovery sweep stub (Postgres authoritative)
-- [ ] Add stage runner skeleton (stages 0-5; parallel 1/2/3)
+- [x] Scaffold ARQ worker in `apps/worker`
+- [x] Add job recovery sweep stub (Postgres authoritative)
+- [x] Add stage runner skeleton (stages 0-5; parallel 1/2/3)
 
 ## Phase 5: Supabase Schema (SQL Files)
 
-- [ ] Create initial migrations in `supabase/migrations/`
-- [ ] Define table: `user_profiles`
-- [ ] Define table: `jobs`
-- [ ] Define table: `job_stages`
-- [ ] Define table: `experiments`
-- [ ] Define table: `prompt_versions`
-- [ ] Define table: `vision_cache`
-- [ ] Define table: `credit_operations`
-- [ ] Add RLS policy templates + indexes (use `(select auth.uid())` wrapper)
-- [ ] Add Storage bucket notes (private + signed URLs)
+- [x] Create initial migrations in `supabase/migrations/`
+- [x] Define table: `user_profiles`
+- [x] Define table: `jobs`
+- [x] Define table: `job_stages`
+- [x] Define table: `experiments`
+- [x] Define table: `prompt_versions`
+- [x] Define table: `vision_cache`
+- [x] Define table: `credit_operations`
+- [x] Add RLS policy templates + indexes (use `(select auth.uid())` wrapper)
+- [x] Add Storage bucket notes (private + signed URLs)
 
 ## Phase 6: Prompts + Golden Tests (Repo Artifacts)
 
-- [ ] Create prompt file: `prompts/vision-ctr/v1.0.md`
-- [ ] Create prompt file: `prompts/vision-pdp/v1.0.md`
-- [ ] Create prompt file: `prompts/text-alignment/v1.0.md`
-- [ ] Create prompt file: `prompts/avatar-explanation/v1.0.md`
-- [ ] Create `prompts/CHANGELOG.md`
-- [ ] Add placeholder golden test docs in `golden_tests/`
+- [x] Create prompt file: `prompts/vision-ctr/v1.0.md`
+- [x] Create prompt file: `prompts/vision-pdp/v1.0.md`
+- [x] Create prompt file: `prompts/text-alignment/v1.0.md`
+- [x] Create prompt file: `prompts/avatar-explanation/v1.0.md`
+- [x] Create `prompts/CHANGELOG.md`
+- [x] Add placeholder golden test docs in `golden_tests/`
 
 ## Phase 7: Frontend UI (From Prior Notes)
 
