@@ -42,3 +42,6 @@ Desktop.ini
 # Claude/Codex local config
 .claude/settings.local.json
 
+
+.vercel
+.env*.local

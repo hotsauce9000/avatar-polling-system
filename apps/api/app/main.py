@@ -19,24 +19,25 @@ def healthz() -> dict:
 
 
 @app.post("/jobs")
-def create_job(user: AuthenticatedUser = Depends(require_user)) -> dict:
+async def create_job(user: AuthenticatedUser = Depends(require_user)) -> dict:
     # Placeholder until we add Supabase + credits + ARQ enqueue.
     job_id = str(uuid4())
     return {"job_id": job_id, "status": "created", "user_id": user.user_id}
 
 
 @app.get("/jobs/{job_id}")
-def get_job(job_id: str, user: AuthenticatedUser = Depends(require_user)) -> dict:
+async def get_job(job_id: str, user: AuthenticatedUser = Depends(require_user)) -> dict:
     return {"job_id": job_id, "status": "unknown", "user_id": user.user_id}
 
 
 @app.get("/jobs/{job_id}/stages")
-def get_job_stages(job_id: str, user: AuthenticatedUser = Depends(require_user)) -> dict:
+async def get_job_stages(
+    job_id: str, user: AuthenticatedUser = Depends(require_user)
+) -> dict:
     return {"job_id": job_id, "stages": [], "user_id": user.user_id}
 
 
 @app.get("/credits/balance")
-def get_credits_balance(user: AuthenticatedUser = Depends(require_user)) -> dict:
+async def get_credits_balance(user: AuthenticatedUser = Depends(require_user)) -> dict:
     # Placeholder until we add credits table + atomic UPDATE logic.
     return {"user_id": user.user_id, "credit_balance": None}
-
