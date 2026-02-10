@@ -329,7 +329,7 @@ Deliverables:
 - [ ] Results loading (stage progress).
 - [ ] Results complete (scores, avatars, evidence, fixes).
 - [ ] Experiments list/compare.
-- [ ] Implement Supabase Realtime subscription to `job_stages` filtered by job_id.
+- [x] Implement Supabase Realtime subscription to `job_stages` filtered by job_id.
 - [ ] Implement polling fallback to Railway `GET /jobs/{id}/stages` (ex: every 5s while incomplete).
 - [ ] Ensure stage order independence (stages 1/2/3 arrive in any order).
 
