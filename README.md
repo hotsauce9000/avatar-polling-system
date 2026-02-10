@@ -4,6 +4,10 @@ Build spec: `PROJECT_PLAN_v5.0_HYBRID.md`
 
 Current plan: `docs/plans/2026-02-10-feat-amazon-avatar-listing-optimizer-mvp-plan.md`
 
+Runbooks:
+
+- Env vars: `docs/runbooks/env.md`
+
 ## Repo Layout (Planned)
 
 - `apps/web`: Next.js frontend (Vercel)
@@ -12,4 +16,3 @@ Current plan: `docs/plans/2026-02-10-feat-amazon-avatar-listing-optimizer-mvp-pl
 - `supabase`: SQL migrations and policies
 - `prompts`: versioned LLM prompts
 - `golden_tests`: golden test inputs + expected outcomes
-

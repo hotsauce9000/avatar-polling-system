@@ -5,11 +5,16 @@ import { useRouter } from "next/navigation";
 
 import type { User } from "@supabase/supabase-js";
 
+import { createJob } from "@/lib/api";
 import { getSupabaseClient } from "@/lib/supabase/client";
 
 export default function DashboardPage() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
+  const [asinA, setAsinA] = useState("");
+  const [asinB, setAsinB] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -36,7 +41,7 @@ export default function DashboardPage() {
 
     const { data: authListener } = getSupabaseClient().auth.onAuthStateChange(
       (_event, session) => {
-      if (!session) router.replace("/");
+        if (!session) router.replace("/");
       }
     );
 
@@ -79,6 +84,8 @@ export default function DashboardPage() {
               <span className="text-sm font-medium">ASIN or URL (A)</span>
               <input
                 className="h-11 rounded-lg border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-black dark:focus:border-zinc-600"
+                value={asinA}
+                onChange={(e) => setAsinA(e.target.value)}
                 placeholder="B0XXXXXXXXX"
               />
             </label>
@@ -86,6 +93,8 @@ export default function DashboardPage() {
               <span className="text-sm font-medium">ASIN or URL (B)</span>
               <input
                 className="h-11 rounded-lg border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400 dark:border-zinc-800 dark:bg-black dark:focus:border-zinc-600"
+                value={asinB}
+                onChange={(e) => setAsinB(e.target.value)}
                 placeholder="B0XXXXXXXXX"
               />
             </label>
@@ -93,11 +102,38 @@ export default function DashboardPage() {
 
           <button
             className="mt-4 h-11 rounded-lg bg-zinc-950 px-4 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-zinc-50 dark:text-zinc-950 dark:hover:bg-zinc-200"
-            disabled
+            disabled={isSubmitting || !asinA.trim() || !asinB.trim()}
+            onClick={async () => {
+              setError(null);
+              setIsSubmitting(true);
+              try {
+                const { data } = await getSupabaseClient().auth.getSession();
+                if (!data.session) {
+                  router.replace("/");
+                  return;
+                }
+
+                const result = await createJob({
+                  asinA,
+                  asinB,
+                  accessToken: data.session.access_token,
+                });
+
+                router.push(`/jobs/${result.job_id}`);
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "Unknown error");
+              } finally {
+                setIsSubmitting(false);
+              }
+            }}
             type="button"
           >
-            Compare (wiring next)
+            {isSubmitting ? "Starting..." : "Compare"}
           </button>
+
+          {error ? (
+            <p className="mt-3 text-sm text-red-600">{error}</p>
+          ) : null}
         </section>
       </main>
     </div>
