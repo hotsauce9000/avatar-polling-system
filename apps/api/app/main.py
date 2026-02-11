@@ -1,14 +1,23 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import re
+import time
+import uuid
+from datetime import datetime, timezone
+from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException
+import httpx
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .auth import AuthenticatedUser, require_user
-from .config import load_env
-from .supabase_rest import insert_one, select_many, select_one
+from .config import get_env, get_optional_env, load_env
+from .credit_packs import CreditPack, INITIAL_CREDIT_PACKS
+from .supabase_rest import insert_one, rpc, select_many, select_one, update_one
 
 
 load_env()
@@ -27,11 +36,29 @@ app.add_middleware(
 )
 
 ASIN_RE = re.compile(r"^[A-Z0-9]{10}$")
+EVENT_NAME_RE = re.compile(r"^[a-z0-9_.:-]{2,64}$")
 
 
 class CreateJobRequest(BaseModel):
     asin_a: str
     asin_b: str
+
+
+class CreateCheckoutSessionRequest(BaseModel):
+    pack_id: str
+    success_url: str | None = None
+    cancel_url: str | None = None
+
+
+class TrackEventRequest(BaseModel):
+    event_name: str = Field(min_length=2, max_length=64)
+    job_id: str | None = None
+    stage_number: int | None = Field(default=None, ge=0, le=5)
+    properties: dict[str, Any] = Field(default_factory=dict)
+
+
+def utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def parse_asin(value: str) -> str:
@@ -51,6 +78,152 @@ def parse_asin(value: str) -> str:
         return m.group(1).upper()
 
     raise HTTPException(status_code=400, detail="Invalid ASIN or Amazon URL")
+
+
+def normalize_event_name(raw: str) -> str:
+    normalized = raw.strip().lower().replace(" ", "_")
+    if not EVENT_NAME_RE.fullmatch(normalized):
+        raise HTTPException(status_code=400, detail="Invalid analytics event name")
+    return normalized
+
+
+def find_credit_pack(pack_id: str) -> CreditPack | None:
+    for pack in INITIAL_CREDIT_PACKS:
+        if pack["id"] == pack_id:
+            return pack
+    return None
+
+
+def default_checkout_urls() -> tuple[str, str]:
+    base_url = get_optional_env("WEB_APP_BASE_URL", "http://localhost:3000") or "http://localhost:3000"
+    base_url = base_url.rstrip("/")
+    return (
+        f"{base_url}/dashboard?checkout=success",
+        f"{base_url}/dashboard?checkout=cancel",
+    )
+
+
+def _parse_stripe_signature(sig_header: str) -> tuple[int, list[str]]:
+    timestamp: int | None = None
+    v1_signatures: list[str] = []
+
+    for part in sig_header.split(","):
+        if "=" not in part:
+            continue
+        key, value = part.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key == "t":
+            try:
+                timestamp = int(value)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400, detail="Invalid Stripe signature timestamp"
+                ) from exc
+        elif key == "v1" and value:
+            v1_signatures.append(value)
+
+    if timestamp is None or not v1_signatures:
+        raise HTTPException(status_code=400, detail="Malformed Stripe signature header")
+    return timestamp, v1_signatures
+
+
+def verify_stripe_signature(payload: bytes, sig_header: str, secret: str) -> None:
+    timestamp, signatures = _parse_stripe_signature(sig_header)
+    try:
+        payload_text = payload.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid Stripe payload encoding") from exc
+    signed = f"{timestamp}.{payload_text}".encode("utf-8")
+    expected = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
+
+    if not any(hmac.compare_digest(expected, s) for s in signatures):
+        raise HTTPException(status_code=400, detail="Invalid Stripe webhook signature")
+
+    tolerance_seconds = 300
+    if abs(int(time.time()) - timestamp) > tolerance_seconds:
+        raise HTTPException(status_code=400, detail="Stale Stripe webhook signature")
+
+
+async def ensure_user_profile(user_id: str) -> dict[str, Any]:
+    profile = await select_one("user_profiles", {"select": "*", "id": f"eq.{user_id}"})
+    if profile:
+        return profile
+    return await insert_one("user_profiles", {"id": user_id})
+
+
+async def record_analytics_event(
+    *,
+    user_id: str,
+    event_name: str,
+    job_id: str | None = None,
+    stage_number: int | None = None,
+    properties: dict[str, Any] | None = None,
+) -> None:
+    payload: dict[str, Any] = {
+        "user_id": user_id,
+        "event_name": normalize_event_name(event_name),
+        "properties": properties or {},
+    }
+    if job_id:
+        payload["job_id"] = job_id
+    if stage_number is not None:
+        payload["stage_number"] = stage_number
+
+    try:
+        await insert_one("analytics_events", payload)
+    except Exception:
+        # Analytics should never block product flow.
+        return
+
+
+async def create_stripe_checkout_session(
+    *,
+    user: AuthenticatedUser,
+    pack: CreditPack,
+    success_url: str,
+    cancel_url: str,
+) -> dict[str, str]:
+    secret_key = get_env("STRIPE_SECRET_KEY")
+    payload = {
+        "mode": "payment",
+        "success_url": success_url,
+        "cancel_url": cancel_url,
+        "client_reference_id": user.user_id,
+        "allow_promotion_codes": "true",
+        "metadata[user_id]": user.user_id,
+        "metadata[pack_id]": pack["id"],
+        "metadata[credits]": str(pack["credits"]),
+        "line_items[0][quantity]": "1",
+        "line_items[0][price_data][currency]": "usd",
+        "line_items[0][price_data][unit_amount]": str(pack["price_usd"] * 100),
+        "line_items[0][price_data][product_data][name]": (
+            f"{pack['label']} credits ({pack['credits']})"
+        ),
+        "line_items[0][price_data][product_data][description]": pack["blurb"],
+    }
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        resp = await client.post(
+            "https://api.stripe.com/v1/checkout/sessions",
+            auth=(secret_key, ""),
+            data=payload,
+        )
+
+    if resp.status_code >= 400:
+        snippet = (resp.text or "")[:400]
+        raise HTTPException(
+            status_code=502,
+            detail=f"Stripe session creation failed (HTTP {resp.status_code}): {snippet}",
+        )
+
+    data = resp.json()
+    checkout_url = data.get("url")
+    session_id = data.get("id")
+    if not isinstance(checkout_url, str) or not checkout_url:
+        raise HTTPException(status_code=502, detail="Stripe did not return checkout URL")
+    if not isinstance(session_id, str) or not session_id:
+        raise HTTPException(status_code=502, detail="Stripe did not return session id")
+    return {"checkout_url": checkout_url, "session_id": session_id}
 
 
 @app.get("/healthz")
@@ -75,37 +248,46 @@ async def create_job(
             "user_id": user.user_id,
             "asin_a": asin_a,
             "asin_b": asin_b,
-            "status": "created",
+            # Avoid a race where the worker claims the job before stage rows exist.
+            "status": "seeding",
         },
     )
     job_id = str(job.get("id"))
 
-    # Minimal vertical slice: write placeholder stages so the UI can prove
-    # progressive delivery + Realtime subscription before the real pipeline.
-    await insert_one(
-        "job_stages",
-        {
-            "job_id": job_id,
-            "stage_number": 0,
-            "status": "completed",
-            "output": {"note": "Stage 0 placeholder (job created)."},
-        },
-    )
-    await insert_one(
-        "job_stages",
-        {
-            "job_id": job_id,
-            "stage_number": 1,
-            "status": "completed",
-            "output": {
-                "note": "Stage 1 placeholder (vision CTR).",
-                "ctr_winner": "TIE",
-                "confidence": 0.0,
+    # Create stage rows up-front so the UI can render the full pipeline
+    # immediately. The worker will update these as it runs.
+    stages = {
+        0: "listing_fetch",
+        1: "main_image_ctr",
+        2: "gallery_cvr",
+        3: "text_alignment",
+        4: "avatars",
+        5: "verdict",
+    }
+    for stage_number, stage_name in stages.items():
+        await insert_one(
+            "job_stages",
+            {
+                "job_id": job_id,
+                "stage_number": stage_number,
+                "status": "pending",
+                "output": {"stage_name": stage_name},
             },
-        },
+        )
+
+    await update_one(
+        "jobs",
+        {"id": f"eq.{job_id}"},
+        {"status": "queued", "updated_at": utc_now_iso()},
+    )
+    await record_analytics_event(
+        user_id=user.user_id,
+        job_id=job_id,
+        event_name="job_created",
+        properties={"asin_a": asin_a, "asin_b": asin_b},
     )
 
-    return {"job_id": job_id, "status": job.get("status", "created")}
+    return {"job_id": job_id, "status": "queued"}
 
 
 @app.get("/jobs/{job_id}")
@@ -141,17 +323,179 @@ async def get_job_stages(
 
 @app.get("/credits/balance")
 async def get_credits_balance(user: AuthenticatedUser = Depends(require_user)) -> dict:
-    profile = await select_one(
-        "user_profiles", {"select": "*", "id": f"eq.{user.user_id}"}
-    )
-    if not profile:
-        # Backfill safety: profile rows are usually created by trigger, but
-        # older users (created pre-migration) won't have one.
-        profile = await insert_one("user_profiles", {"id": user.user_id})
-
+    profile = await ensure_user_profile(user.user_id)
     return {
         "user_id": user.user_id,
         "credit_balance": profile.get("credit_balance"),
         "daily_credit_used": profile.get("daily_credit_used"),
         "daily_credit_reset_date": profile.get("daily_credit_reset_date"),
+    }
+
+
+@app.get("/credits/packs")
+async def get_credit_packs(_user: AuthenticatedUser = Depends(require_user)) -> dict:
+    return {
+        "currency": "USD",
+        "version": "v1",
+        "packs": INITIAL_CREDIT_PACKS,
+    }
+
+
+@app.post("/credits/checkout")
+async def create_credit_checkout(
+    body: CreateCheckoutSessionRequest,
+    user: AuthenticatedUser = Depends(require_user),
+) -> dict:
+    pack = find_credit_pack(body.pack_id)
+    if not pack:
+        raise HTTPException(status_code=400, detail="Unknown credit pack")
+
+    default_success, default_cancel = default_checkout_urls()
+    success_url = body.success_url or default_success
+    cancel_url = body.cancel_url or default_cancel
+
+    session = await create_stripe_checkout_session(
+        user=user,
+        pack=pack,
+        success_url=success_url,
+        cancel_url=cancel_url,
+    )
+
+    await record_analytics_event(
+        user_id=user.user_id,
+        event_name="stripe_checkout_session_created",
+        properties={
+            "pack_id": pack["id"],
+            "credits": pack["credits"],
+            "price_usd": pack["price_usd"],
+            "stripe_session_id": session["session_id"],
+        },
+    )
+
+    return {
+        "checkout_url": session["checkout_url"],
+        "session_id": session["session_id"],
+        "pack_id": pack["id"],
+    }
+
+
+@app.get("/credits/operations")
+async def get_credit_operations(
+    user: AuthenticatedUser = Depends(require_user),
+) -> dict:
+    rows = await select_many(
+        "credit_operations",
+        {
+            "select": "idempotency_key,operation_type,amount,job_id,stripe_session_id,created_at",
+            "user_id": f"eq.{user.user_id}",
+            "order": "created_at.desc",
+            "limit": "50",
+        },
+    )
+    return {"operations": rows}
+
+
+@app.post("/analytics/events")
+async def track_event(
+    body: TrackEventRequest,
+    user: AuthenticatedUser = Depends(require_user),
+) -> dict:
+    await record_analytics_event(
+        user_id=user.user_id,
+        event_name=body.event_name,
+        job_id=body.job_id,
+        stage_number=body.stage_number,
+        properties=body.properties,
+    )
+    return {"ok": True}
+
+
+@app.post("/webhooks/stripe")
+async def stripe_webhook(request: Request) -> dict:
+    sig_header = request.headers.get("stripe-signature")
+    if not sig_header:
+        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
+
+    payload = await request.body()
+    webhook_secret = get_env("STRIPE_WEBHOOK_SECRET")
+    verify_stripe_signature(payload, sig_header, webhook_secret)
+
+    try:
+        event = json.loads(payload.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid webhook JSON") from exc
+
+    event_type = str(event.get("type") or "")
+    data_obj = event.get("data", {}).get("object")
+    if not isinstance(data_obj, dict):
+        return {"ok": True, "ignored": True, "reason": "missing_data_object"}
+
+    if event_type != "checkout.session.completed":
+        return {"ok": True, "ignored": True, "event_type": event_type}
+
+    session_id = data_obj.get("id")
+    metadata = data_obj.get("metadata")
+    payment_status = str(data_obj.get("payment_status") or "")
+    if not isinstance(session_id, str) or not session_id:
+        raise HTTPException(status_code=400, detail="Stripe session id is missing")
+    if payment_status and payment_status not in {"paid", "no_payment_required"}:
+        return {
+            "ok": True,
+            "ignored": True,
+            "reason": f"payment_status={payment_status}",
+            "session_id": session_id,
+        }
+    if not isinstance(metadata, dict):
+        raise HTTPException(status_code=400, detail="Stripe metadata is missing")
+
+    user_id = metadata.get("user_id")
+    credits_raw = metadata.get("credits")
+    pack_id = metadata.get("pack_id")
+    if not isinstance(user_id, str) or not user_id:
+        raise HTTPException(status_code=400, detail="Missing user_id metadata")
+
+    try:
+        credits = int(str(credits_raw))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Missing credits metadata") from exc
+    if credits <= 0:
+        raise HTTPException(status_code=400, detail="Invalid credits metadata")
+
+    idempotency_key = str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"stripe:checkout.session.completed:{session_id}",
+        )
+    )
+    rpc_result = await rpc(
+        "apply_credit_purchase",
+        {
+            "p_user_id": user_id,
+            "p_amount": credits,
+            "p_idempotency_key": idempotency_key,
+            "p_stripe_session_id": session_id,
+        },
+    )
+    resolved = rpc_result
+    if isinstance(rpc_result, list) and rpc_result and isinstance(rpc_result[0], dict):
+        resolved = rpc_result[0]
+    applied = bool(resolved.get("applied")) if isinstance(resolved, dict) else False
+    reason = str(resolved.get("reason") or "") if isinstance(resolved, dict) else ""
+
+    await record_analytics_event(
+        user_id=user_id,
+        event_name="stripe_checkout_completed",
+        properties={
+            "stripe_session_id": session_id,
+            "pack_id": str(pack_id) if pack_id is not None else None,
+            "credits": credits,
+            "applied": applied,
+            "reason": reason or None,
+        },
+    )
+    return {
+        "ok": True,
+        "session_id": session_id,
+        "applied": applied,
+        "reason": reason or None,
     }

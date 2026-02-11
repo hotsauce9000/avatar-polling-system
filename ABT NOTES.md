@@ -6,3 +6,4 @@ Now, based on your knowledge of the project, commit all changed files now in a s
 
 ## GIT BUMP
 Do all the GitHub stuff: commit, deploy, create tag, bump version, release, monitor gh actions, compute checksums, etc.
+

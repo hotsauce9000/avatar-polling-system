@@ -24,7 +24,7 @@ def _service_headers() -> dict[str, str]:
 async def insert_one(table: str, row: dict[str, Any]) -> dict[str, Any]:
     url = f"{_rest_base_url()}/{table}"
     headers = {**_service_headers(), "Prefer": "return=representation"}
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(url, headers=headers, json=row)
     resp.raise_for_status()
     data = resp.json()
@@ -33,10 +33,22 @@ async def insert_one(table: str, row: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+async def insert_many(table: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not rows:
+        return []
+    url = f"{_rest_base_url()}/{table}"
+    headers = {**_service_headers(), "Prefer": "return=representation"}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(url, headers=headers, json=rows)
+    resp.raise_for_status()
+    data = resp.json()
+    return data if isinstance(data, list) else [data]
+
+
 async def select_many(table: str, params: dict[str, str]) -> list[dict[str, Any]]:
     url = f"{_rest_base_url()}/{table}"
     headers = _service_headers()
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.get(url, headers=headers, params=params)
     resp.raise_for_status()
     data = resp.json()
@@ -59,7 +71,7 @@ async def update_many(
 ) -> list[dict[str, Any]]:
     url = f"{_rest_base_url()}/{table}"
     headers = {**_service_headers(), "Prefer": "return=representation"}
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.patch(url, headers=headers, params=match_params, json=patch)
     resp.raise_for_status()
     data = resp.json()
@@ -76,11 +88,3 @@ async def update_one(
         return None
     return rows[0]
 
-
-async def rpc(function_name: str, params: dict[str, Any]) -> Any:
-    url = f"{_rest_base_url()}/rpc/{function_name}"
-    headers = {**_service_headers(), "Prefer": "return=representation"}
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(url, headers=headers, json=params)
-    resp.raise_for_status()
-    return resp.json()
