@@ -4,6 +4,19 @@ import { useMemo, useState, useTransition } from "react";
 
 import { getSupabaseClient } from "@/lib/supabase/client";
 
+const RESERVED_TEST_EMAIL_DOMAINS = new Set(["example.com", "example.net", "example.org"]);
+
+function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+function usesReservedDomain(value: string): boolean {
+  const at = value.lastIndexOf("@");
+  if (at < 0) return false;
+  const domain = value.slice(at + 1);
+  return RESERVED_TEST_EMAIL_DOMAINS.has(domain);
+}
+
 export default function Home() {
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState<string | null>(null);
@@ -70,13 +83,27 @@ export default function Home() {
               setMessage(null);
 
               startTransition(async () => {
+                const normalizedEmail = normalizeEmail(email);
+
+                if (usesReservedDomain(normalizedEmail)) {
+                  setMessage("Use a real inbox domain. Reserved example.com addresses cannot receive magic links.");
+                  return;
+                }
+
                 const { error } = await getSupabaseClient().auth.signInWithOtp({
-                  email,
+                  email: normalizedEmail,
                   options: redirectTo ? { emailRedirectTo: redirectTo } : {},
                 });
 
                 if (error) {
-                  setMessage(error.message);
+                  const lowerMessage = error.message.toLowerCase();
+                  if (lowerMessage.includes("invalid") && lowerMessage.includes("email")) {
+                    setMessage(
+                      "Sign-in failed: this email was rejected by the auth provider. Check formatting and use a deliverable inbox.",
+                    );
+                    return;
+                  }
+                  setMessage(`Sign-in failed: ${error.message}`);
                   return;
                 }
 

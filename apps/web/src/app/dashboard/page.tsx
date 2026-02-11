@@ -6,13 +6,19 @@ import { useRouter } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 
 import {
+  getAnalyticsEvents,
   createCreditCheckout,
   createJob,
   getCreditOperations,
   getCreditPacks,
+  getRecentExperiments,
+  getRecentJobs,
   trackEvent,
+  type AnalyticsEventRow,
   type CreditOperation,
   type CreditPack,
+  type RecentExperiment,
+  type RecentJob,
 } from "@/lib/api";
 import { getSupabaseClient } from "@/lib/supabase/client";
 
@@ -20,29 +26,6 @@ type CreditSnapshot = {
   credit_balance: number;
   daily_credit_used: number;
   daily_credit_reset_date: string | null;
-};
-
-type RecentJob = {
-  id: string;
-  asin_a: string;
-  asin_b: string;
-  status: string;
-  created_at: string;
-};
-
-type RecentExperiment = {
-  id: string;
-  asin_a: string;
-  asin_b: string;
-  created_at: string;
-  change_tags: string[] | null;
-};
-
-type AnalyticsEventRow = {
-  event_name: string;
-  stage_number: number | null;
-  properties: Record<string, unknown> | null;
-  created_at: string;
 };
 
 type StageLatencySummary = {
@@ -145,15 +128,37 @@ export default function DashboardPage() {
             operations: CreditOperation[];
           }
         | null = null;
+      let jobsApiResp:
+        | {
+            jobs: RecentJob[];
+          }
+        | null = null;
+      let experimentsApiResp:
+        | {
+            experiments: RecentExperiment[];
+          }
+        | null = null;
+      let analyticsApiResp:
+        | {
+            events: AnalyticsEventRow[];
+          }
+        | null = null;
       if (accessToken) {
         try {
-          [packsResp, operationsResp] = await Promise.all([
+          [packsResp, operationsResp, jobsApiResp, experimentsApiResp, analyticsApiResp] =
+            await Promise.all([
             getCreditPacks(accessToken),
             getCreditOperations(accessToken),
+            getRecentJobs({ accessToken, limit: 6 }),
+            getRecentExperiments({ accessToken, limit: 6 }),
+            getAnalyticsEvents({ accessToken, limit: 200 }),
           ]);
         } catch {
           packsResp = null;
           operationsResp = null;
+          jobsApiResp = null;
+          experimentsApiResp = null;
+          analyticsApiResp = null;
         }
       }
 
@@ -162,13 +167,19 @@ export default function DashboardPage() {
       if (!profileResp.error && profileResp.data) {
         setCredits(profileResp.data as CreditSnapshot);
       }
-      if (!jobsResp.error && jobsResp.data) {
+      if (jobsApiResp?.jobs) {
+        setRecentJobs(jobsApiResp.jobs);
+      } else if (!jobsResp.error && jobsResp.data) {
         setRecentJobs(jobsResp.data as RecentJob[]);
       }
-      if (!experimentsResp.error && experimentsResp.data) {
+      if (experimentsApiResp?.experiments) {
+        setRecentExperiments(experimentsApiResp.experiments);
+      } else if (!experimentsResp.error && experimentsResp.data) {
         setRecentExperiments(experimentsResp.data as RecentExperiment[]);
       }
-      if (!analyticsResp.error && analyticsResp.data) {
+      if (analyticsApiResp?.events) {
+        setAnalyticsEvents(analyticsApiResp.events);
+      } else if (!analyticsResp.error && analyticsResp.data) {
         setAnalyticsEvents(analyticsResp.data as AnalyticsEventRow[]);
       }
       if (packsResp?.packs?.length) {
