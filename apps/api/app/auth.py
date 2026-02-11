@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import jwt
+import httpx
 from fastapi import Header, HTTPException
 
 from .config import get_env
@@ -22,7 +22,9 @@ def _extract_bearer_token(authorization: str | None) -> str:
     return authorization.removeprefix("Bearer ").strip()
 
 
-def require_user(authorization: str | None = Header(default=None)) -> AuthenticatedUser:
+async def require_user(
+    authorization: str | None = Header(default=None),
+) -> AuthenticatedUser:
     """
     Validates Supabase JWT for Railway API endpoints.
 
@@ -31,19 +33,26 @@ def require_user(authorization: str | None = Header(default=None)) -> Authentica
     """
     token = _extract_bearer_token(authorization)
 
-    jwt_secret = get_env("SUPABASE_JWT_SECRET")
+    supabase_url = get_env("SUPABASE_URL").rstrip("/")
+    anon_key = get_env("SUPABASE_ANON_KEY")
+
+    # Validate token by asking Supabase Auth for the user. This avoids needing
+    # the JWT secret locally (simpler for early MVP).
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "apikey": anon_key,
+    }
+
     try:
-        payload = jwt.decode(
-            token,
-            jwt_secret,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
-    except jwt.PyJWTError as exc:
-        raise HTTPException(status_code=401, detail="Invalid JWT") from exc
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(f"{supabase_url}/auth/v1/user", headers=headers)
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503, detail="Auth provider unreachable"
+        ) from exc
 
-    return AuthenticatedUser(
-        user_id=str(payload.get("sub")),
-        email=payload.get("email"),
-    )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid JWT")
 
+    data = resp.json()
+    return AuthenticatedUser(user_id=str(data.get("id")), email=data.get("email"))

@@ -4,10 +4,10 @@ Source of truth: `docs/plans/2026-02-10-feat-amazon-avatar-listing-optimizer-mvp
 
 ## Phase 0: Decisions (Unblockers)
 
-- [ ] Confirm repo structure: monorepo with `apps/web`, `apps/api`, `apps/worker`
-- [ ] Confirm package manager for web: npm
-- [ ] Confirm Python packaging for api/worker: `requirements.txt` + `venv`
-- [ ] Confirm initial credit packs (or defer and stub config)
+- [x] Confirm repo structure: monorepo with `apps/web`, `apps/api`, `apps/worker`
+- [x] Confirm package manager for web: npm
+- [x] Confirm Python packaging for api/worker: `requirements.txt` + `venv`
+- [x] Confirm initial credit packs (or defer and stub config)
 
 ## Phase 1: Repo Skeleton + Tooling
 
@@ -36,6 +36,8 @@ Source of truth: `docs/plans/2026-02-10-feat-amazon-avatar-listing-optimizer-mvp
 - [x] Scaffold ARQ worker in `apps/worker`
 - [x] Add job recovery sweep stub (Postgres authoritative)
 - [x] Add stage runner skeleton (stages 0-5; parallel 1/2/3)
+- [x] Wire DB-backed worker poller (no Redis required) that claims `jobs.status=queued`
+- [x] Update API to seed `job_stages` (0-5) and then set `jobs.status=queued` (avoid claim race)
 
 ## Phase 5: Supabase Schema (SQL Files)
 
@@ -71,35 +73,75 @@ Source of truth: `docs/plans/2026-02-10-feat-amazon-avatar-listing-optimizer-mvp
 ### Pages to Build
 
 Page 1: Landing + Auth
-- [ ] Hero section (product name, tagline, value prop, CTA)
-- [ ] How It Works (3-step visual)
-- [ ] Magic link auth UI (email input, simple form)
+- [x] Hero section (product name, tagline, value prop, CTA)
+- [x] How It Works (3-step visual)
+- [x] Magic link auth UI (email input, simple form)
 
 Page 2: Dashboard
-- [ ] Top nav (logo, credits, user menu)
-- [ ] ASIN input card (2 URL/ASIN fields, compare button, validation)
-- [ ] Credit balance + usage info
-- [ ] Recent experiments list
+- [x] Top nav (logo, credits, user menu)
+- [x] ASIN input card (2 URL/ASIN fields, compare button, validation)
+- [x] Credit balance + usage info
+- [x] Recent experiments list
 
 Page 3: Results - Pipeline Running
-- [ ] Stage progress indicator (6 stages)
-- [ ] Product cards for both ASINs (thumbs, titles, basic info from Stage 0)
-- [ ] Stage-by-stage results (CTR -> CVR -> text -> avatars -> verdict)
-- [ ] Skeleton/loading states for upcoming stages
+- [x] Stage progress indicator (6 stages)
+- [x] Product cards for both ASINs (thumbs, titles, basic info from Stage 0)
+- [x] Stage-by-stage results (CTR -> CVR -> text -> avatars -> verdict)
+- [x] Skeleton/loading states for upcoming stages
 
 Page 4: Results - Complete
-- [ ] Score comparison panel (CTR, CVR, Overall) + winner badges
-- [ ] Confidence meter + split verdict handling
-- [ ] Avatar cards (3 personas)
-- [ ] "What the model saw" evidence panel
-- [ ] Fix recommendations list (prioritized, evidence-linked)
-- [ ] Save as experiment + change tags input
+- [x] Score comparison panel (CTR, CVR, Overall) + winner badges
+- [x] Confidence meter + split verdict handling
+- [x] Avatar cards (3 personas)
+- [x] "What the model saw" evidence panel
+- [x] Fix recommendations list (prioritized, evidence-linked)
+- [x] Save as experiment + change tags input
 
 Page 5: Experiments
-- [ ] Experiment list with filters (date, ASIN, pinned)
-- [ ] Side-by-side comparison (2-3 experiments)
-- [ ] Score deltas highlighted (improved/declined)
+- [x] Experiment list with filters (date, ASIN, pinned)
+- [x] Side-by-side comparison (2-3 experiments)
+- [x] Score deltas highlighted (improved/declined)
+
+## Phase 8: Pipeline Provider Upgrades
+
+- [x] Stage 0: attempt Apify actor fetch first, fallback to direct HTML fetch
+- [x] Stage 1: OpenAI vision scoring (main image CTR) with heuristic fallback
+- [x] Stage 2: OpenAI vision scoring (gallery CVR) with heuristic fallback
+- [x] Stage 3: OpenAI text scoring with heuristic fallback
+- [x] Stage 4: OpenAI avatar generation with heuristic fallback
+- [x] Persist stage provider in `job_stages.provider_used`
+
+## Phase 9: Reliability + Billing + Analytics + Golden Tests
+
+- [x] Add Apify retry/backoff reliability and direct-fetch retry fallback in stage 0
+- [x] Add Stripe checkout endpoint + webhook signature verification + idempotent credit apply
+- [x] Add credit operation history API + dashboard view
+- [x] Add analytics event storage + API ingestion + worker stage latency instrumentation
+- [x] Add dashboard latency summary (P50/P95 from `stage_completed` events)
+- [x] Add executable golden tests (`tests/test_golden_pipeline.py`) with fixture baseline
 
 ## Review
 
-- [ ] Fill in after completing initial skeleton (what was built, how to run it, what's next)
+- [x] Fill in after completing initial skeleton (what was built, how to run it, what's next)
+
+Summary:
+- Upgraded worker pipeline to use provider-based execution with safe fallbacks.
+- Added Apify-first listing fetch in stage 0 (falls back to direct Amazon fetch when Apify run is not permitted).
+- Replaced placeholder heuristic-only stage outputs with OpenAI-backed scoring/generation for stages 1-4 (with automatic fallback to heuristics).
+- Enhanced dashboard and results pages with credit visibility, recent history, progress UI, verdict/avatars/evidence/fixes, and experiment saving.
+- Added a dedicated experiments page with filters and side-by-side score delta comparison.
+- Confirmed and exposed initial credit packs (v1) via API + dashboard section.
+- Added Stripe purchase flow (checkout + webhook) with idempotent credit application in Postgres.
+- Added analytics events for job/stage/purchase flows and surfaced stage latency summaries on dashboard.
+- Added executable golden tests for deterministic stage-5 verdict stability and schema shape.
+- Hardened stage 0 listing fetch with retry/backoff for both Apify and direct HTML providers.
+
+How to run:
+- Start local stack: `powershell -ExecutionPolicy Bypass -File .\scripts\dev.ps1`
+- Open: `/dashboard`, run a comparison, then inspect `/jobs/{jobId}`.
+- Open experiments: `/experiments`.
+
+What's next:
+- If stage 0 shows Apify HTTP 403, replace token with one that has actor run permission, or set a different `APIFY_ACTOR_ID`.
+- Configure Stripe webhook endpoint in dashboard and point it to `/webhooks/stripe`.
+- Expand golden fixtures from 1 pair to 5-10 real ASIN pairs before production gatekeeping.

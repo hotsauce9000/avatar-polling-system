@@ -16,16 +16,46 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-950 dark:bg-black dark:text-zinc-50">
-      <main className="mx-auto flex w-full max-w-xl flex-col gap-10 px-6 py-20">
-        <header className="space-y-3">
-          <h1 className="text-3xl font-semibold tracking-tight">
+      <main className="mx-auto flex w-full max-w-4xl flex-col gap-10 px-6 py-20">
+        <header className="space-y-4">
+          <h1 className="text-4xl font-semibold tracking-tight">
             Avatar-Based Amazon Listing Optimizer
           </h1>
-          <p className="text-zinc-600 dark:text-zinc-400">
-            Compare two ASINs. Get a verdict grounded in vision evidence and
-            buyer personas.
+          <p className="max-w-2xl text-zinc-600 dark:text-zinc-400">
+            Compare two ASINs in realtime, then get a winner with evidence,
+            confidence, and buyer-avatar explanations.
           </p>
+          <div className="inline-flex rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300">
+            Built for fast listing iteration and clear next actions.
+          </div>
         </header>
+
+        <section className="grid gap-3 md:grid-cols-3">
+          {[
+            {
+              title: "1. Compare",
+              body: "Paste two ASINs or Amazon URLs and launch the run.",
+            },
+            {
+              title: "2. Watch stages",
+              body: "See listing fetch, image scoring, text scoring, and avatars.",
+            },
+            {
+              title: "3. Improve",
+              body: "Use prioritized fixes, save experiments, and iterate quickly.",
+            },
+          ].map((step) => (
+            <article
+              key={step.title}
+              className="rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+            >
+              <h2 className="text-sm font-semibold">{step.title}</h2>
+              <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                {step.body}
+              </p>
+            </article>
+          ))}
+        </section>
 
         <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
           <h2 className="text-lg font-medium">Sign in</h2>
