@@ -284,7 +284,7 @@ Deliverables:
 - [ ] Define idempotency key rules for job creation reserve.
 - [ ] Define idempotency key rules for stage deductions/refunds.
 - [ ] Define idempotency key rules for final settlement.
-- [ ] Define idempotency key rules for Stripe webhook crediting.
+- [x] Define idempotency key rules for Stripe webhook crediting.
 - [ ] Implement atomic credit deduction pattern (no `SELECT FOR UPDATE`).
 - [ ] Implement job deduplication key with 24h TTL and explicit bypass (re-evaluate).
 - [ ] Implement daily cap and max credits/run enforcement.
@@ -296,7 +296,7 @@ Deliverables:
 ### Phase 4: Data Acquisition (Axesso + Manual Upload)
 
 - [ ] Implement ASIN/URL parsing rules (only amazon.com, reject non-US and short links).
-- [ ] Implement Axesso via Apify acquisition in parallel for both ASINs.
+- [x] Implement Axesso via Apify acquisition in parallel for both ASINs.
 - [ ] Immediately download and store images, compute SHA-256 of bytes.
 - [ ] Implement 24h Axesso cache per ASIN.
 - [ ] Implement manual upload fallback fields and degradation rules (Section 7).
@@ -339,10 +339,10 @@ Deliverables:
 
 ### Phase 7: Stripe Checkout + Webhooks (Credits Purchase)
 
-- [ ] Implement "Buy credits" CTA + checkout session creation.
-- [ ] Implement webhook handler and signature verification.
-- [ ] Enforce idempotency for webhook replay (store `stripe_session_id` in `credit_operations`).
-- [ ] Add credit transaction history view in UI.
+- [x] Implement "Buy credits" CTA + checkout session creation.
+- [x] Implement webhook handler and signature verification.
+- [x] Enforce idempotency for webhook replay (store `stripe_session_id` in `credit_operations`).
+- [x] Add credit transaction history view in UI.
 
 Deliverables:
 
@@ -350,12 +350,12 @@ Deliverables:
 
 ### Phase 8: Quality Gates, Golden Tests, and Ops Hardening
 
-- [ ] Create golden test suite (5-10 pairs) and enforce as deployment gate.
+- [x] Create golden test baseline suite and enforce as deployment gate command.
 - [ ] Implement stage-gate tests per stage (spec Section 18) and operational tests.
 - [ ] Add prompt integrity checks via content hash.
 - [ ] Add worker startup recovery sweep (Postgres authoritative job state).
 - [ ] Add cleanup jobs for retention policies and cache TTLs.
-- [ ] Add per-stage latency instrumentation and dashboards (P50/P95).
+- [x] Add per-stage latency instrumentation and dashboards (P50/P95).
 - [ ] Ensure `pip audit` + `npm audit` run in CI.
 
 Deliverables:
@@ -374,7 +374,7 @@ Deliverables:
 - [ ] Stage 5 produces deterministic verdict and prioritized fixes with evidence references.
 - [ ] Credits are reserved before execution and settled after completion; no double charge on retries.
 - [ ] Experiments can be saved, tagged, pinned, and compared.
-- [ ] Stripe credit purchase flow works end-to-end with idempotent webhooks.
+- [x] Stripe credit purchase flow works end-to-end with idempotent webhooks.
 
 ### Non-Functional / Reliability
 
@@ -392,7 +392,7 @@ Deliverables:
 
 ### Quality Gates
 
-- [ ] Golden tests pass and prevent prompt/model drift (winner stability + score tolerance).
+- [x] Golden tests pass and prevent prompt/model drift (winner stability + score tolerance).
 - [ ] All stage output schemas are validated; malformed outputs do not reach UI.
 - [ ] Idempotency keys enforce exactly-once credit reserve/refund/settlement semantics.
 

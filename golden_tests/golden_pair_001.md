@@ -1,31 +1,27 @@
 ---
 id: 1
-asin_a: "REPLACE_ME"
-asin_b: "REPLACE_ME"
-expected_ctr_winner: "A|B|TIE"
-expected_cvr_winner: "A|B|TIE"
-expected_overall_winner: "A|B|TIE"
-labeled_by: "REPLACE_ME"
-labeled_at: "2026-02-10"
-notes: ""
+fixture: "golden_tests/fixtures/golden_pair_001.json"
+asin_a: "B0TESTA001"
+asin_b: "B0TESTB002"
+labeled_by: "system_fixture_v1"
+labeled_at: "2026-02-11"
+notes: "Synthetic baseline for deterministic regression coverage."
 ---
 
 # Golden Pair 001
 
 ## Context
 
-Describe why this pair is useful (clear winner, split CTR/CVR, close call, etc).
+This pair is a controlled baseline used for schema and score stability tests.
+It validates deterministic stage-5 scoring and winner selection.
 
 ## Expected Outcome
 
-- CTR winner:
-- CVR winner:
-- Overall winner:
+Canonical expected values live in:
+
+- `golden_tests/fixtures/golden_pair_001.json`
 
 ## Artifacts
 
-- Main images:
-- PDP galleries:
-- Listing text:
-- Review snippets / reviewInsights:
-
+- Source fixture: `golden_tests/fixtures/golden_pair_001.json`
+- Test suite: `tests/test_golden_pipeline.py`

@@ -20,6 +20,29 @@ export type CreditOperation = {
   created_at: string;
 };
 
+export type RecentJob = {
+  id: string;
+  asin_a: string;
+  asin_b: string;
+  status: string;
+  created_at: string;
+};
+
+export type RecentExperiment = {
+  id: string;
+  asin_a: string;
+  asin_b: string;
+  created_at: string;
+  change_tags: string[] | null;
+};
+
+export type AnalyticsEventRow = {
+  event_name: string;
+  stage_number: number | null;
+  properties: Record<string, unknown> | null;
+  created_at: string;
+};
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export async function createJob(params: {
@@ -164,4 +187,82 @@ export async function trackEvent(params: {
   if (!resp.ok) {
     throw new Error(`Analytics event failed (${resp.status})`);
   }
+}
+
+export async function getRecentJobs(params: {
+  accessToken: string;
+  limit?: number;
+}): Promise<{ jobs: RecentJob[] }> {
+  const query = params.limit ? `?limit=${encodeURIComponent(String(params.limit))}` : "";
+  const resp = await fetch(`${API_BASE_URL}/jobs/recent${query}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${params.accessToken}`,
+    },
+  });
+
+  if (!resp.ok) {
+    let detail = `HTTP ${resp.status}`;
+    try {
+      const body = (await resp.json()) as { detail?: string };
+      if (body.detail) detail = body.detail;
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+
+  return (await resp.json()) as { jobs: RecentJob[] };
+}
+
+export async function getRecentExperiments(params: {
+  accessToken: string;
+  limit?: number;
+}): Promise<{ experiments: RecentExperiment[] }> {
+  const query = params.limit ? `?limit=${encodeURIComponent(String(params.limit))}` : "";
+  const resp = await fetch(`${API_BASE_URL}/experiments/recent${query}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${params.accessToken}`,
+    },
+  });
+
+  if (!resp.ok) {
+    let detail = `HTTP ${resp.status}`;
+    try {
+      const body = (await resp.json()) as { detail?: string };
+      if (body.detail) detail = body.detail;
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+
+  return (await resp.json()) as { experiments: RecentExperiment[] };
+}
+
+export async function getAnalyticsEvents(params: {
+  accessToken: string;
+  limit?: number;
+}): Promise<{ events: AnalyticsEventRow[] }> {
+  const query = params.limit ? `?limit=${encodeURIComponent(String(params.limit))}` : "";
+  const resp = await fetch(`${API_BASE_URL}/analytics/events${query}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${params.accessToken}`,
+    },
+  });
+
+  if (!resp.ok) {
+    let detail = `HTTP ${resp.status}`;
+    try {
+      const body = (await resp.json()) as { detail?: string };
+      if (body.detail) detail = body.detail;
+    } catch {
+      // ignore
+    }
+    throw new Error(detail);
+  }
+
+  return (await resp.json()) as { events: AnalyticsEventRow[] };
 }

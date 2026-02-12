@@ -145,3 +145,53 @@ What's next:
 - If stage 0 shows Apify HTTP 403, replace token with one that has actor run permission, or set a different `APIFY_ACTOR_ID`.
 - Configure Stripe webhook endpoint in dashboard and point it to `/webhooks/stripe`.
 - Expand golden fixtures from 1 pair to 5-10 real ASIN pairs before production gatekeeping.
+
+---
+
+# Phase 10: Premium SaaS UI Upgrade
+
+Source: `docs/plans/2026-02-11-feat-premium-saas-ui-upgrade-plan.md`
+
+## Phase 1: Foundation
+- [x] 1. Install `lucide-react`
+- [x] 2. `globals.css` - add 6-12 violet CSS vars, fix font (remove Arial override), h-dvh
+- [x] 3. `layout.tsx` - fix metadata to "Avatar Polling System" + real description
+
+## Phase 2: Sidebar + Route Group + Auth + Security
+- [x] 4. Create `middleware.ts` - server-side auth gating
+- [x] 5. Create `AppSidebar.tsx` - 240px sidebar, Lucide icons, mobile hamburger, aria, Escape close
+- [x] 6. Create `(app)/layout.tsx` - sidebar + main wrapper, auth check, onAuthStateChange listener
+- [x] 7. Move 3 page files into `(app)/` route group
+- [x] 8. Remove inline headers + per-page auth listeners from moved pages
+- [x] 9. Split dashboard into sub-components (Comparison, Credits, CreditPacks, RecentJobs)
+
+## Phase 3: Page Upgrades
+- [x] 10. Landing - auth redirect, gradient heading, violet CTA, card hover lift, focus rings
+- [x] 11. Dashboard - violet Compare btn, Lucide icons, hover states, grid breakpoint shift
+- [x] 12. Job detail - Lucide icons, winner badge, violet fix badges, avatar borders, violet save btn
+- [x] 13. Experiments - hover states, delta color coding, Lucide icons, violet focus rings
+
+## Phase 4: Polish
+- [x] 14. Cursor-pointer audit + targeted transitions (no transition-all)
+- [x] 15. Standardize button heights to h-10
+- [x] 16. Fix dark mode: text-zinc-500 -> add dark variants, auth callback dark mode
+- [x] 17. Stripe URL validation + responsive testing + realtime/Stripe regression check
+
+## Phase 10 Review
+
+Summary:
+- Implemented route-group shell with a fixed 240px sidebar (`AppSidebar`) and consolidated auth/session listener in `(app)/layout.tsx`.
+- Moved authenticated routes to `src/app/(app)/...` and removed page-level headers and listener duplication.
+- Split dashboard into `DashboardComparison`, `DashboardCredits`, `DashboardCreditPacks`, and `DashboardRecentJobs`.
+- Applied premium UI pass across landing/dashboard/job detail/experiments with violet accents, Lucide icons, targeted transitions, and hover/focus consistency.
+- Added Stripe checkout hostname validation before redirect: `new URL(url).hostname.endsWith('.stripe.com')`.
+
+Validation:
+- `npm run lint` (apps/web) passed.
+- `npm run build` (apps/web) passed.
+
+Additional QA completed:
+- `node scripts/qa-premium-ui-upgrade.mjs` (apps/web) passed.
+- Responsive overflow checks passed at 375/768/1024/1440 on landing/dashboard/experiments/job detail.
+- Stripe success banner and checkout redirect attempt (`checkout.stripe.com`) verified.
+- Job detail realtime smoke verified (job + stage fetches + realtime UI state), and source wiring confirmed (`channel` + `postgres_changes` + `subscribe` + `removeChannel`).
