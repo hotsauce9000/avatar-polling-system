@@ -14,9 +14,9 @@ Tables intended to be user-scoped:
 - `public.job_stages` (policy via join to `jobs.user_id`)
 - `public.experiments`
 - `public.credit_operations` (select-only for users)
+- `public.analytics_events` (select and optional user insert)
 
 Admin-managed tables (lock down by default):
 
 - `public.prompt_versions`
 - `public.vision_cache`
-
