@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from .config import get_optional_env, load_env
 from .pipeline import run_pipeline_for_job, utc_now_iso
-from .supabase_rest import select_many, update_many
+from .supabase_rest import delete_many, select_many, update_many
 
 
 def read_int_env(name: str, default: int, *, minimum: int, maximum: int) -> int:
@@ -107,6 +107,33 @@ async def run_startup_recovery_sweep() -> dict[str, int]:
     }
 
 
+async def run_cleanup_sweep() -> dict[str, int]:
+    vision_cache_ttl_days = read_int_env("VISION_CACHE_TTL_DAYS", 7, minimum=1, maximum=365)
+    analytics_retention_days = read_int_env(
+        "ANALYTICS_EVENTS_RETENTION_DAYS",
+        30,
+        minimum=1,
+        maximum=3650,
+    )
+    now = datetime.now(timezone.utc)
+    vision_cutoff = now - timedelta(days=vision_cache_ttl_days)
+    analytics_cutoff = now - timedelta(days=analytics_retention_days)
+
+    deleted_vision_cache = await delete_many(
+        "vision_cache",
+        {"created_at": f"lt.{vision_cutoff.isoformat()}"},
+    )
+    deleted_analytics_events = await delete_many(
+        "analytics_events",
+        {"created_at": f"lt.{analytics_cutoff.isoformat()}"},
+    )
+    return {
+        "vision_cache_deleted": len(deleted_vision_cache),
+        "analytics_events_deleted": len(deleted_analytics_events),
+        "total_deleted": len(deleted_vision_cache) + len(deleted_analytics_events),
+    }
+
+
 async def _claim_job_with_status(
     status: str,
     extra_filters: dict[str, str] | None = None,
@@ -164,6 +191,12 @@ async def claim_next_job() -> str | None:
 async def main_loop() -> int:
     load_env()
     print("worker: poller started (DB-backed; no Redis required)", flush=True)
+    cleanup_interval_seconds = read_int_env(
+        "WORKER_CLEANUP_INTERVAL_SECONDS",
+        3600,
+        minimum=60,
+        maximum=86400,
+    )
     try:
         recovery = await run_startup_recovery_sweep()
         print(
@@ -176,8 +209,23 @@ async def main_loop() -> int:
     except Exception as e:
         print(f"worker: startup recovery error: {e}", file=sys.stderr, flush=True)
 
+    next_cleanup_at = datetime.now(timezone.utc)
     while True:
         try:
+            if datetime.now(timezone.utc) >= next_cleanup_at:
+                try:
+                    cleanup = await run_cleanup_sweep()
+                    print(
+                        "worker: cleanup sweep complete "
+                        f"(vision_cache={cleanup['vision_cache_deleted']}, "
+                        f"analytics_events={cleanup['analytics_events_deleted']}, "
+                        f"total={cleanup['total_deleted']})",
+                        flush=True,
+                    )
+                except Exception as e:
+                    print(f"worker: cleanup sweep error: {e}", file=sys.stderr, flush=True)
+                next_cleanup_at = datetime.now(timezone.utc) + timedelta(seconds=cleanup_interval_seconds)
+
             job_id = await claim_next_job()
             if not job_id:
                 await asyncio.sleep(2.0)

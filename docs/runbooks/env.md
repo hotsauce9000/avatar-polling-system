@@ -37,6 +37,9 @@ Never commit real secrets. These files are gitignored.
 - `WORKER_RECOVERY_MAX_JOBS` (default: `200`)
 - `WORKER_RECOVERY_PROCESSING_STALE_SECONDS` (default: `900`)
 - `WORKER_RECOVERY_SEEDING_STALE_SECONDS` (default: `180`)
+- `WORKER_CLEANUP_INTERVAL_SECONDS` (default: `3600`)
+- `VISION_CACHE_TTL_DAYS` (default: `7`)
+- `ANALYTICS_EVENTS_RETENTION_DAYS` (default: `30`)
 
 ## Optional (Billing)
 
@@ -50,6 +53,9 @@ Notes:
 - If Apify returns HTTP 403, your token likely lacks actor run permissions.
 - Stage 0 retries Apify and direct fetches with exponential backoff before failing.
 - Stages 1-4 fall back to heuristics if model calls fail.
+- Prompt files are SHA-256 hashed at runtime when OpenAI stages run.
+  If `jobs.prompt_versions_pinned.prompt_hashes` includes a hash for a prompt path,
+  the worker enforces an exact match before using that prompt.
 
 Use `.env.example` as the template.
 

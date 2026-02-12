@@ -351,12 +351,12 @@ Deliverables:
 ### Phase 8: Quality Gates, Golden Tests, and Ops Hardening
 
 - [x] Create golden test baseline suite and enforce as deployment gate command.
-- [ ] Implement stage-gate tests per stage (spec Section 18) and operational tests.
-- [ ] Add prompt integrity checks via content hash.
+- [x] Implement stage-gate tests per stage (spec Section 18) and operational tests.
+- [x] Add prompt integrity checks via content hash.
 - [x] Add worker startup recovery sweep (Postgres authoritative job state).
-- [ ] Add cleanup jobs for retention policies and cache TTLs.
+- [x] Add cleanup jobs for retention policies and cache TTLs.
 - [x] Add per-stage latency instrumentation and dashboards (P50/P95).
-- [ ] Ensure `pip audit` + `npm audit` run in CI.
+- [x] Ensure `pip audit` + `npm audit` run in CI.
 
 Deliverables:
 
@@ -393,7 +393,7 @@ Deliverables:
 ### Quality Gates
 
 - [x] Golden tests pass and prevent prompt/model drift (winner stability + score tolerance).
-- [ ] All stage output schemas are validated; malformed outputs do not reach UI.
+- [x] All stage output schemas are validated; malformed outputs do not reach UI.
 - [ ] Idempotency keys enforce exactly-once credit reserve/refund/settlement semantics.
 
 ## Success Metrics (Initial)

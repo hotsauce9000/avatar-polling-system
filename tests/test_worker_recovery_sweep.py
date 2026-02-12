@@ -91,3 +91,55 @@ async def test_startup_recovery_noop_when_no_stale_jobs(
         "seeding_recovered": 0,
         "total_recovered": 0,
     }
+
+
+@pytest.mark.asyncio
+async def test_claim_next_job_prefers_queued(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    async def fake_claim(
+        status: str,
+        extra_filters: dict[str, str] | None = None,
+        *,
+        order: str = "created_at.asc",
+    ) -> str | None:
+        calls.append(status)
+        if status == "queued":
+            return "job-queued-1"
+        return None
+
+    monkeypatch.setattr(poller, "_claim_job_with_status", fake_claim)
+
+    job_id = await poller.claim_next_job()
+
+    assert job_id == "job-queued-1"
+    assert calls == ["queued"]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_sweep_applies_ttl_filters(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VISION_CACHE_TTL_DAYS", "7")
+    monkeypatch.setenv("ANALYTICS_EVENTS_RETENTION_DAYS", "30")
+
+    delete_calls: list[tuple[str, dict[str, str]]] = []
+
+    async def fake_delete_many(table: str, match_params: dict[str, str]) -> list[dict[str, Any]]:
+        delete_calls.append((table, dict(match_params)))
+        if table == "vision_cache":
+            return [{"id": "v1"}, {"id": "v2"}]
+        if table == "analytics_events":
+            return [{"id": "a1"}]
+        raise AssertionError(f"Unexpected table: {table}")
+
+    monkeypatch.setattr(poller, "delete_many", fake_delete_many)
+
+    result = await poller.run_cleanup_sweep()
+
+    assert result == {
+        "vision_cache_deleted": 2,
+        "analytics_events_deleted": 1,
+        "total_deleted": 3,
+    }
+    assert [t for t, _ in delete_calls] == ["vision_cache", "analytics_events"]
+    assert delete_calls[0][1]["created_at"].startswith("lt.")
+    assert delete_calls[1][1]["created_at"].startswith("lt.")
