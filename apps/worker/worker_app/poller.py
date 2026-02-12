@@ -5,9 +5,106 @@ import sys
 from typing import Any
 from datetime import datetime, timedelta, timezone
 
-from .config import load_env
+from .config import get_optional_env, load_env
 from .pipeline import run_pipeline_for_job, utc_now_iso
 from .supabase_rest import select_many, update_many
+
+
+def read_int_env(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    raw = get_optional_env(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    if value < minimum:
+        return minimum
+    if value > maximum:
+        return maximum
+    return value
+
+
+async def _recover_stale_jobs(
+    status: str,
+    *,
+    stale_seconds: int,
+    limit: int,
+    reset_in_progress_stages: bool,
+) -> int:
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_seconds)
+    jobs = await select_many(
+        "jobs",
+        {
+            "select": "id,status,updated_at",
+            "status": f"eq.{status}",
+            "updated_at": f"lt.{cutoff.isoformat()}",
+            "order": "updated_at.asc",
+            "limit": str(limit),
+        },
+    )
+
+    recovered = 0
+    for job in jobs:
+        job_id = str(job.get("id") or "")
+        if not job_id:
+            continue
+
+        updated = await update_many(
+            "jobs",
+            {"id": f"eq.{job_id}", "status": f"eq.{status}"},
+            {"status": "queued", "updated_at": utc_now_iso()},
+        )
+        if not updated:
+            continue
+
+        recovered += 1
+        if reset_in_progress_stages:
+            await update_many(
+                "job_stages",
+                {"job_id": f"eq.{job_id}", "status": "eq.in_progress"},
+                {
+                    "status": "pending",
+                    "started_at": None,
+                    "completed_at": None,
+                },
+            )
+
+    return recovered
+
+
+async def run_startup_recovery_sweep() -> dict[str, int]:
+    max_jobs = read_int_env("WORKER_RECOVERY_MAX_JOBS", 200, minimum=1, maximum=1000)
+    processing_stale_seconds = read_int_env(
+        "WORKER_RECOVERY_PROCESSING_STALE_SECONDS",
+        900,
+        minimum=60,
+        maximum=86400,
+    )
+    seeding_stale_seconds = read_int_env(
+        "WORKER_RECOVERY_SEEDING_STALE_SECONDS",
+        180,
+        minimum=30,
+        maximum=86400,
+    )
+
+    processing_recovered = await _recover_stale_jobs(
+        "processing",
+        stale_seconds=processing_stale_seconds,
+        limit=max_jobs,
+        reset_in_progress_stages=True,
+    )
+    seeding_recovered = await _recover_stale_jobs(
+        "seeding",
+        stale_seconds=seeding_stale_seconds,
+        limit=max_jobs,
+        reset_in_progress_stages=False,
+    )
+    return {
+        "processing_recovered": processing_recovered,
+        "seeding_recovered": seeding_recovered,
+        "total_recovered": processing_recovered + seeding_recovered,
+    }
 
 
 async def _claim_job_with_status(
@@ -67,6 +164,18 @@ async def claim_next_job() -> str | None:
 async def main_loop() -> int:
     load_env()
     print("worker: poller started (DB-backed; no Redis required)", flush=True)
+    try:
+        recovery = await run_startup_recovery_sweep()
+        print(
+            "worker: startup recovery complete "
+            f"(processing={recovery['processing_recovered']}, "
+            f"seeding={recovery['seeding_recovered']}, "
+            f"total={recovery['total_recovered']})",
+            flush=True,
+        )
+    except Exception as e:
+        print(f"worker: startup recovery error: {e}", file=sys.stderr, flush=True)
+
     while True:
         try:
             job_id = await claim_next_job()

@@ -32,6 +32,12 @@ Never commit real secrets. These files are gitignored.
 - `APIFY_POLL_INTERVAL_SECONDS` (default: `2`)
 - `DIRECT_FETCH_MAX_ATTEMPTS` (default: `2`)
 
+## Optional (Worker Startup Recovery)
+
+- `WORKER_RECOVERY_MAX_JOBS` (default: `200`)
+- `WORKER_RECOVERY_PROCESSING_STALE_SECONDS` (default: `900`)
+- `WORKER_RECOVERY_SEEDING_STALE_SECONDS` (default: `180`)
+
 ## Optional (Billing)
 
 - `STRIPE_SECRET_KEY` for checkout session creation.

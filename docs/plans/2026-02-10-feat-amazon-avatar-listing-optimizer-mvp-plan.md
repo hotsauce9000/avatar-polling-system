@@ -353,7 +353,7 @@ Deliverables:
 - [x] Create golden test baseline suite and enforce as deployment gate command.
 - [ ] Implement stage-gate tests per stage (spec Section 18) and operational tests.
 - [ ] Add prompt integrity checks via content hash.
-- [ ] Add worker startup recovery sweep (Postgres authoritative job state).
+- [x] Add worker startup recovery sweep (Postgres authoritative job state).
 - [ ] Add cleanup jobs for retention policies and cache TTLs.
 - [x] Add per-stage latency instrumentation and dashboards (P50/P95).
 - [ ] Ensure `pip audit` + `npm audit` run in CI.
