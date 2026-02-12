@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import html
 import json
 import re
@@ -25,6 +26,10 @@ STAGES: list[tuple[int, str]] = [
 
 PROMPTS_DIR = Path(__file__).resolve().parents[3] / "prompts"
 RETRYABLE_HTTP_STATUSES = {408, 409, 425, 429, 500, 502, 503, 504}
+
+
+class PromptIntegrityError(RuntimeError):
+    pass
 
 
 def utc_now_iso() -> str:
@@ -152,6 +157,154 @@ def normalize_ws(raw: str) -> str:
 def load_prompt(prompt_rel_path: str) -> str:
     path = PROMPTS_DIR / prompt_rel_path
     return path.read_text(encoding="utf-8")
+
+
+def sha256_hex(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def normalize_sha256(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if re.fullmatch(r"[0-9a-f]{64}", normalized):
+        return normalized
+    return None
+
+
+def get_expected_prompt_hash(job: dict[str, Any] | None, prompt_rel_path: str) -> str | None:
+    if not isinstance(job, dict):
+        return None
+    pinned = job.get("prompt_versions_pinned")
+    if not isinstance(pinned, dict):
+        return None
+
+    direct = normalize_sha256(pinned.get(prompt_rel_path))
+    if direct:
+        return direct
+
+    prompt_hashes = pinned.get("prompt_hashes")
+    if isinstance(prompt_hashes, dict):
+        nested = normalize_sha256(prompt_hashes.get(prompt_rel_path))
+        if nested:
+            return nested
+
+    short_key = prompt_rel_path.split("/", 1)[0]
+    short = normalize_sha256(pinned.get(short_key))
+    if short:
+        return short
+
+    if isinstance(prompt_hashes, dict):
+        short_nested = normalize_sha256(prompt_hashes.get(short_key))
+        if short_nested:
+            return short_nested
+
+    return None
+
+
+def load_prompt_with_integrity(
+    job: dict[str, Any] | None,
+    prompt_rel_path: str,
+) -> tuple[str, dict[str, Any]]:
+    prompt = load_prompt(prompt_rel_path)
+    actual_hash = sha256_hex(prompt)
+    expected_hash = get_expected_prompt_hash(job, prompt_rel_path)
+    if expected_hash and actual_hash != expected_hash:
+        raise PromptIntegrityError(
+            f"Prompt hash mismatch for {prompt_rel_path}: expected {expected_hash}, got {actual_hash}"
+        )
+    return prompt, {
+        "path": prompt_rel_path,
+        "hash_sha256": actual_hash,
+        "expected_hash_sha256": expected_hash,
+        "validated": bool(expected_hash),
+    }
+
+
+def _expect(condition: bool, message: str, errors: list[str]) -> None:
+    if not condition:
+        errors.append(message)
+
+
+def _score_in_range(value: Any) -> bool:
+    if not isinstance(value, (int, float)):
+        return False
+    return 0.0 <= float(value) <= 1.0
+
+
+def validate_stage_output(stage_number: int, output: dict[str, Any]) -> None:
+    errors: list[str] = []
+    _expect(isinstance(output, dict), "output must be an object", errors)
+    if errors:
+        raise ValueError(f"Stage {stage_number} output schema invalid: {'; '.join(errors)}")
+
+    stage_name = output.get("stage_name")
+    expected_name = STAGES[stage_number][1]
+    _expect(stage_name == expected_name, f"stage_name must be '{expected_name}'", errors)
+
+    if stage_number == 0:
+        _expect(isinstance(output.get("ok"), bool), "ok must be boolean", errors)
+        _expect(isinstance(output.get("asin_a"), dict), "asin_a must be object", errors)
+        _expect(isinstance(output.get("asin_b"), dict), "asin_b must be object", errors)
+    elif stage_number == 1:
+        if output.get("status") != "skipped":
+            _expect(isinstance(output.get("asin_a"), dict), "asin_a must be object", errors)
+            _expect(isinstance(output.get("asin_b"), dict), "asin_b must be object", errors)
+            if isinstance(output.get("asin_a"), dict):
+                _expect(_score_in_range(output["asin_a"].get("score")), "asin_a.score must be 0..1", errors)
+            if isinstance(output.get("asin_b"), dict):
+                _expect(_score_in_range(output["asin_b"].get("score")), "asin_b.score must be 0..1", errors)
+            _expect(output.get("ctr_winner") in {"A", "B", "TIE"}, "ctr_winner must be A/B/TIE", errors)
+    elif stage_number == 2:
+        _expect(isinstance(output.get("asin_a"), dict), "asin_a must be object", errors)
+        _expect(isinstance(output.get("asin_b"), dict), "asin_b must be object", errors)
+        if isinstance(output.get("asin_a"), dict):
+            _expect(_score_in_range(output["asin_a"].get("score")), "asin_a.score must be 0..1", errors)
+        if isinstance(output.get("asin_b"), dict):
+            _expect(_score_in_range(output["asin_b"].get("score")), "asin_b.score must be 0..1", errors)
+        _expect(output.get("cvr_winner") in {"A", "B", "TIE"}, "cvr_winner must be A/B/TIE", errors)
+    elif stage_number == 3:
+        _expect(isinstance(output.get("asin_a"), dict), "asin_a must be object", errors)
+        _expect(isinstance(output.get("asin_b"), dict), "asin_b must be object", errors)
+        if isinstance(output.get("asin_a"), dict):
+            metrics_a = output["asin_a"].get("metrics")
+            _expect(isinstance(metrics_a, dict), "asin_a.metrics must be object", errors)
+            if isinstance(metrics_a, dict):
+                _expect(_score_in_range(metrics_a.get("score")), "asin_a.metrics.score must be 0..1", errors)
+        if isinstance(output.get("asin_b"), dict):
+            metrics_b = output["asin_b"].get("metrics")
+            _expect(isinstance(metrics_b, dict), "asin_b.metrics must be object", errors)
+            if isinstance(metrics_b, dict):
+                _expect(_score_in_range(metrics_b.get("score")), "asin_b.metrics.score must be 0..1", errors)
+        _expect(output.get("text_winner") in {"A", "B", "TIE"}, "text_winner must be A/B/TIE", errors)
+    elif stage_number == 4:
+        avatars = output.get("avatars")
+        _expect(isinstance(avatars, list), "avatars must be array", errors)
+        if isinstance(avatars, list):
+            _expect(len(avatars) == 3, "avatars must contain exactly 3 entries", errors)
+            for i, avatar in enumerate(avatars):
+                _expect(isinstance(avatar, dict), f"avatars[{i}] must be object", errors)
+                if isinstance(avatar, dict):
+                    _expect(isinstance(avatar.get("name"), str) and bool(avatar.get("name")), f"avatars[{i}].name is required", errors)
+                    _expect(avatar.get("leans_to") in {"A", "B", "TIE"}, f"avatars[{i}].leans_to must be A/B/TIE", errors)
+    elif stage_number == 5:
+        _expect(output.get("winner") in {"A", "B", "TIE"}, "winner must be A/B/TIE", errors)
+        scores = output.get("scores")
+        _expect(isinstance(scores, dict), "scores must be object", errors)
+        if isinstance(scores, dict):
+            asin_a = scores.get("asin_a")
+            asin_b = scores.get("asin_b")
+            _expect(isinstance(asin_a, dict), "scores.asin_a must be object", errors)
+            _expect(isinstance(asin_b, dict), "scores.asin_b must be object", errors)
+            if isinstance(asin_a, dict):
+                _expect(_score_in_range(asin_a.get("total")), "scores.asin_a.total must be 0..1", errors)
+            if isinstance(asin_b, dict):
+                _expect(_score_in_range(asin_b.get("total")), "scores.asin_b.total must be 0..1", errors)
+        _expect(isinstance(output.get("prioritized_fixes"), list), "prioritized_fixes must be array", errors)
+        _expect(_score_in_range(output.get("confidence")), "confidence must be 0..1", errors)
+
+    if errors:
+        raise ValueError(f"Stage {stage_number} output schema invalid: {'; '.join(errors)}")
 
 
 def extract_json_from_text(raw: str) -> dict[str, Any]:
@@ -1027,7 +1180,10 @@ async def stage0_listing_fetch(job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def stage1_main_image_ctr(stage0: dict[str, Any]) -> dict[str, Any]:
+async def stage1_main_image_ctr(
+    stage0: dict[str, Any],
+    job: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     a = stage0["asin_a"]
     b = stage0["asin_b"]
     url_a = a.get("main_image_url")
@@ -1050,7 +1206,7 @@ async def stage1_main_image_ctr(stage0: dict[str, Any]) -> dict[str, Any]:
     openai_key = get_optional_env("OPENAI_API_KEY")
     if openai_key:
         try:
-            prompt = load_prompt("vision-ctr/v1.0.md")
+            prompt, prompt_integrity = load_prompt_with_integrity(job, "vision-ctr/v1.0.md")
             model = get_optional_env("OPENAI_VISION_MODEL", "gpt-4o-mini") or "gpt-4o-mini"
             llm = await openai_chat_json(
                 system_prompt=prompt,
@@ -1097,11 +1253,14 @@ async def stage1_main_image_ctr(stage0: dict[str, Any]) -> dict[str, Any]:
                 "ctr_winner": winner,
                 "confidence": round(clamp01(safe_float(llm.get("confidence"), abs(score_a - score_b))), 3),
                 "evidence": llm.get("evidence") if isinstance(llm.get("evidence"), list) else [],
+                "prompt_integrity": prompt_integrity,
                 "notes": [
                     "Vision-scored by OpenAI using prompts/vision-ctr/v1.0.md.",
                     "Heuristic image metadata retained for debugging and fallback context.",
                 ],
             }
+        except PromptIntegrityError:
+            raise
         except Exception as e:
             # Fallback to heuristics so the pipeline remains resilient.
             return {
@@ -1131,7 +1290,10 @@ async def stage1_main_image_ctr(stage0: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def stage2_gallery_cvr(stage0: dict[str, Any]) -> dict[str, Any]:
+async def stage2_gallery_cvr(
+    stage0: dict[str, Any],
+    job: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     a = stage0["asin_a"]
     b = stage0["asin_b"]
     urls_a = [u for u in (a.get("image_urls") or []) if isinstance(u, str)]
@@ -1164,7 +1326,7 @@ async def stage2_gallery_cvr(stage0: dict[str, Any]) -> dict[str, Any]:
     openai_key = get_optional_env("OPENAI_API_KEY")
     if openai_key and sampled_urls_a and sampled_urls_b:
         try:
-            prompt = load_prompt("vision-pdp/v1.0.md")
+            prompt, prompt_integrity = load_prompt_with_integrity(job, "vision-pdp/v1.0.md")
             model = get_optional_env("OPENAI_VISION_MODEL", "gpt-4o-mini") or "gpt-4o-mini"
 
             content: list[dict[str, Any]] = [
@@ -1219,10 +1381,13 @@ async def stage2_gallery_cvr(stage0: dict[str, Any]) -> dict[str, Any]:
                 "cvr_winner": winner,
                 "confidence": round(clamp01(safe_float(llm.get("confidence"), abs(score_a - score_b))), 3),
                 "evidence": llm.get("evidence") if isinstance(llm.get("evidence"), list) else [],
+                "prompt_integrity": prompt_integrity,
                 "notes": [
                     "Vision-scored by OpenAI using prompts/vision-pdp/v1.0.md.",
                 ],
             }
+        except PromptIntegrityError:
+            raise
         except Exception as e:
             return {
                 "stage_name": "gallery_cvr",
@@ -1267,7 +1432,10 @@ async def stage2_gallery_cvr(stage0: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def stage3_text_alignment(stage0: dict[str, Any]) -> dict[str, Any]:
+async def stage3_text_alignment(
+    stage0: dict[str, Any],
+    job: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     a = stage0["asin_a"]
     b = stage0["asin_b"]
     title_a = a.get("title")
@@ -1294,7 +1462,7 @@ async def stage3_text_alignment(stage0: dict[str, Any]) -> dict[str, Any]:
     openai_key = get_optional_env("OPENAI_API_KEY")
     if openai_key:
         try:
-            prompt = load_prompt("text-alignment/v1.0.md")
+            prompt, prompt_integrity = load_prompt_with_integrity(job, "text-alignment/v1.0.md")
             model = get_optional_env("OPENAI_TEXT_MODEL", "gpt-4o-mini") or "gpt-4o-mini"
             llm = await openai_chat_json(
                 system_prompt=prompt,
@@ -1340,11 +1508,14 @@ async def stage3_text_alignment(stage0: dict[str, Any]) -> dict[str, Any]:
                 "confidence": round(abs(score_a - score_b), 3),
                 "analysis": llm.get("analysis"),
                 "keyword_overlap": overlap,
+                "prompt_integrity": prompt_integrity,
                 "notes": [
                     "LLM text evaluation via prompts/text-alignment/v1.0.md.",
                     "Heuristic text metrics retained for deterministic fallback and debugging.",
                 ],
             }
+        except PromptIntegrityError:
+            raise
         except Exception as e:
             return {
                 "stage_name": "text_alignment",
@@ -1379,7 +1550,12 @@ def pick_winner(score_a: float, score_b: float) -> str:
     return pick_with_margin(score_a, score_b)
 
 
-async def stage4_avatars(stage1: dict[str, Any], stage2: dict[str, Any], stage3: dict[str, Any]) -> dict[str, Any]:
+async def stage4_avatars(
+    stage1: dict[str, Any],
+    stage2: dict[str, Any],
+    stage3: dict[str, Any],
+    job: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     # Lightweight baseline derived from stage scores.
     s1a = float(stage1.get("asin_a", {}).get("score", 0.0)) if isinstance(stage1.get("asin_a"), dict) else 0.0
     s1b = float(stage1.get("asin_b", {}).get("score", 0.0)) if isinstance(stage1.get("asin_b"), dict) else 0.0
@@ -1412,7 +1588,7 @@ async def stage4_avatars(stage1: dict[str, Any], stage2: dict[str, Any], stage3:
     openai_key = get_optional_env("OPENAI_API_KEY")
     if openai_key:
         try:
-            prompt = load_prompt("avatar-explanation/v1.0.md")
+            prompt, prompt_integrity = load_prompt_with_integrity(job, "avatar-explanation/v1.0.md")
             model = get_optional_env("OPENAI_TEXT_MODEL", "gpt-4o-mini") or "gpt-4o-mini"
             llm = await openai_chat_json(
                 system_prompt=prompt,
@@ -1477,11 +1653,14 @@ async def stage4_avatars(stage1: dict[str, Any], stage2: dict[str, Any], stage3:
                     "provider": "openai",
                     "model": model,
                     "avatars": normalized,
+                    "prompt_integrity": prompt_integrity,
                     "notes": [
                         "LLM-generated personas using prompts/avatar-explanation/v1.0.md.",
                         "Personas are explanatory and do not alter deterministic scoring.",
                     ],
                 }
+        except PromptIntegrityError:
+            raise
         except Exception as e:
             return {
                 "stage_name": "avatars",
@@ -1636,6 +1815,7 @@ async def run_pipeline_for_job(job_id: str) -> dict[str, Any]:
     await mark_stage(job_id, 0, {"status": "in_progress", "started_at": stage0_started_at})
     try:
         s0 = await stage0_listing_fetch(job)
+        validate_stage_output(0, s0)
         stage_outputs[0] = s0
         if not s0.get("ok"):
             stage0_completed_at = utc_now_iso()
@@ -1709,6 +1889,7 @@ async def run_pipeline_for_job(job_id: str) -> dict[str, Any]:
         await mark_stage(job_id, n, {"status": "in_progress", "started_at": started_at})
         try:
             out = await coro
+            validate_stage_output(n, out)
             stage_outputs[n] = out
             # If a stage returns its own "status", respect it; else mark completed.
             status = out.get("status") if isinstance(out, dict) else None
@@ -1749,9 +1930,9 @@ async def run_pipeline_for_job(job_id: str) -> dict[str, Any]:
             )
 
     await asyncio.gather(
-        run_stage(1, stage1_main_image_ctr(stage_outputs[0])),
-        run_stage(2, stage2_gallery_cvr(stage_outputs[0])),
-        run_stage(3, stage3_text_alignment(stage_outputs[0])),
+        run_stage(1, stage1_main_image_ctr(stage_outputs[0], job)),
+        run_stage(2, stage2_gallery_cvr(stage_outputs[0], job)),
+        run_stage(3, stage3_text_alignment(stage_outputs[0], job)),
     )
 
     # Stage 4
@@ -1762,7 +1943,9 @@ async def run_pipeline_for_job(job_id: str) -> dict[str, Any]:
             stage_outputs.get(1, {}),
             stage_outputs.get(2, {}),
             stage_outputs.get(3, {}),
+            job,
         )
+        validate_stage_output(4, s4)
         stage_outputs[4] = s4
         stage4_completed_at = utc_now_iso()
         await mark_stage(
@@ -1810,6 +1993,7 @@ async def run_pipeline_for_job(job_id: str) -> dict[str, Any]:
             stage_outputs.get(3, {}),
             stage_outputs.get(4, {}),
         )
+        validate_stage_output(5, s5)
         stage_outputs[5] = s5
         stage5_completed_at = utc_now_iso()
         await mark_stage(

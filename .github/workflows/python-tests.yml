@@ -1,4 +1,4 @@
-name: Python Tests
+name: CI Checks
 
 on:
   pull_request:
@@ -23,5 +23,40 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-test.txt
 
-      - name: Run golden tests
-        run: python -m pytest tests/test_golden_pipeline.py -q
+      - name: Run test suite
+        run: python -m pytest -q
+
+  dependency-audits:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit and Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pip-audit
+          python -m pip install -r requirements-test.txt
+
+      - name: Run pip audit
+        continue-on-error: true
+        run: pip-audit -r requirements.txt -r requirements-dev.txt -r requirements-test.txt
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Install web dependencies
+        run: npm ci --prefix apps/web
+
+      - name: Run npm audit
+        continue-on-error: true
+        run: npm audit --prefix apps/web --audit-level=high
