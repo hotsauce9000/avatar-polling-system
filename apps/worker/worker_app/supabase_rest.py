@@ -88,3 +88,13 @@ async def update_one(
         return None
     return rows[0]
 
+
+async def delete_many(table: str, match_params: dict[str, str]) -> list[dict[str, Any]]:
+    url = f"{_rest_base_url()}/{table}"
+    headers = {**_service_headers(), "Prefer": "return=representation"}
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.delete(url, headers=headers, params=match_params)
+    resp.raise_for_status()
+    data = resp.json()
+    return data if isinstance(data, list) else [data]
+
